@@ -157,6 +157,51 @@ only here, never in the hot path — optionally POSTs the record to a central
 collector. Identity (user / gitEmail / host) is captured locally at session start
 because hook payloads carry none.
 
+## Why it matters
+
+Agent cost is not evenly distributed: most sessions are cheap, and the money
+is lost in the small fraction that go rogue, a retry loop, a failure spiral,
+an unattended CI run. cost-guard puts a hard ceiling on that tail rather than
+shaving the average.
+
+- **Kills runaways at the earliest signal.** Loop detection is rung 1 of the
+  ladder, so a tight retry loop dies in about 4 iterations, before the
+  call-count or wall-clock ceilings are even reached.
+- **Fails open, always.** Missing `jq`, a missing core, or a slow guard
+  resolves to allow, never deny. It can annoy by blocking one legitimate
+  call; it can never brick a session.
+- **Zero cost in the hot path.** The gate is local file I/O plus `jq`; the
+  only network call is one POST at session end.
+- **Denials teach, not just block.** Reasons are instructive ("do not retry,
+  try a different approach, or stop and summarize"), so agents course-correct
+  instead of thrashing.
+- **Leaves a ledger for free.** Every session lands in `sessions.jsonl`;
+  sessions ending in `error`, `timeout`, or `abort` are also flagged into
+  `wasted-sessions.jsonl`.
+
+### How it controls token spend
+
+To be precise: this guards runaway token spend, LLM tokens burning as money
+through waste, not secrets or credential leaks.
+
+It is also a proxy. The guard cannot see the model's token counter, only tool
+calls. Each tool call implies another expensive round-trip: the model reads
+the result, re-reasons over the growing context, and emits the next call. N
+calls means roughly N round-trips over an ever-larger context, where the
+tokens actually go. Capping calls, killing identical-call loops, and stopping
+failure spirals caps those round-trips: a loop that would have made 400
+identical calls, and 400 full-context re-reads, is stopped at about 4.
+
+The limits are real: it does not count or cap tokens or dollars, thresholds
+are calls and minutes. A call that stuffs a huge file into context is one
+"count" to the guard despite the large token hit (the core logs `outputBytes`
+but never gates on it). It governs the tool boundary only, not what the model
+writes back.
+
+cost-guard bounds runaway agent spend by governing the tool-call loop that
+drives token consumption, failing open so it never breaks a session. A
+circuit breaker, not a meter.
+
 ## Supported platforms
 
 All five are **FULL for guard behavior**; read the caveats before trusting
