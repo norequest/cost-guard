@@ -74,7 +74,7 @@ The repo root is itself a Claude Code plugin **and** a single-plugin marketplace
 so no copying is required:
 
 ```
-/plugin marketplace add prixioge/cost-guard      # or a local path: /plugin marketplace add ./cost-guard
+/plugin marketplace add norequest/cost-guard      # or a local path: /plugin marketplace add ./cost-guard
 /plugin install cost-guard@cost-guard            # plugin@marketplace
 ```
 
