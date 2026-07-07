@@ -1,0 +1,7 @@
+{
+  "session_id": "gemini-sess-42a7",
+  "tool_name": "run_shell_command",
+  "tool_input": {
+    "command": "ls -la"
+  }
+}

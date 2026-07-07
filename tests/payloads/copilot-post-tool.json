@@ -1,0 +1,11 @@
+{
+  "sessionId": "copilot-sess-7f3a91",
+  "toolName": "shell",
+  "toolArgs": {
+    "command": "pnpm build"
+  },
+  "toolResult": {
+    "textResultForLlm": "Build completed successfully in 12.4s",
+    "exitCode": 0
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "session_id": "a1b2c3d4-e5f6-claude-0001",
+  "cwd": "/Users/dev/project",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "npm test"
+  },
+  "tool_response": {
+    "stdout": "Test Suites: 12 passed, 12 total",
+    "stderr": "",
+    "interrupted": false,
+    "is_error": false
+  }
+}

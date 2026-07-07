@@ -1,0 +1,8 @@
+{
+  "conversation_id": "conv_9f8e2b17",
+  "hook_event_name": "preToolUse",
+  "tool_name": "read_file",
+  "tool_input": {
+    "path": "src/index.ts"
+  }
+}

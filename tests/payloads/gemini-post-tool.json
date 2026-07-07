@@ -1,0 +1,8 @@
+{
+  "session_id": "gemini-sess-42a7",
+  "tool_name": "run_shell_command",
+  "tool_response": {
+    "output": "total 24\ndrwxr-xr-x  6 dev dev 192 .",
+    "is_error": false
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "session_id": "codex_01HZX8Q7NR3K",
+  "cwd": "/srv/app",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "shell",
+  "tool_input": {
+    "command": ["bash", "-lc", "cargo build --release"]
+  }
+}
