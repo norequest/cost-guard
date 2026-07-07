@@ -1,0 +1,21 @@
+{
+  "name": "cost-guard",
+  "owner": {
+    "name": "Prixio",
+    "url": "https://github.com/norequest"
+  },
+  "metadata": {
+    "description": "Platform-neutral cost & runaway control for AI coding agents.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "cost-guard",
+      "source": "./",
+      "version": "1.0.0",
+      "description": "Detects loops, failure streaks, and tool-call/time budgets in the free preToolUse path, then denies or checkpoints before spend runs away.",
+      "author": { "name": "Prixio" },
+      "license": "MIT"
+    }
+  ]
+}

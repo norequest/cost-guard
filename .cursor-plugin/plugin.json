@@ -1,0 +1,13 @@
+{
+  "name": "cost-guard",
+  "displayName": "cost-guard",
+  "version": "1.0.0",
+  "description": "Platform-neutral cost & runaway control for AI coding agents. Detects loops, failure streaks, and tool-call/time budgets in the free preToolUse path, then denies or checkpoints before spend runs away.",
+  "author": {
+    "name": "Prixio"
+  },
+  "homepage": "https://github.com/norequest/cost-guard",
+  "license": "MIT",
+  "keywords": ["cost", "budget", "guard", "runaway", "hooks", "finops"],
+  "hooks": "./adapters/cursor/hooks.json"
+}

@@ -4,7 +4,7 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": ".codex/hooks/cost-guard/adapter.sh session-start", "timeout": 10 }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT:-.}/adapters/codex/adapter.sh\" session-start", "timeout": 10 }
         ]
       }
     ],
@@ -12,7 +12,7 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": ".codex/hooks/cost-guard/adapter.sh pre-tool", "timeout": 10 }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT:-.}/adapters/codex/adapter.sh\" pre-tool", "timeout": 10 }
         ]
       }
     ],
@@ -20,7 +20,7 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": ".codex/hooks/cost-guard/adapter.sh post-tool", "timeout": 10 }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT:-.}/adapters/codex/adapter.sh\" post-tool", "timeout": 10 }
         ]
       }
     ],
@@ -28,7 +28,7 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": ".codex/hooks/cost-guard/adapter.sh session-end", "timeout": 15 }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT:-.}/adapters/codex/adapter.sh\" session-end", "timeout": 15 }
         ]
       }
     ]

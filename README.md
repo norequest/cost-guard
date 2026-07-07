@@ -1,14 +1,136 @@
 # cost-guard
 
 Platform-neutral cost and runaway control for AI coding agents — Claude Code,
-GitHub Copilot, Cursor, OpenAI Codex, and Google Gemini CLI. All guard logic runs
-in the free, observational **pre-tool** hook path, so it adds **no token usage**
-of its own. One neutral core holds the escalation logic; each agent gets a thin
-adapter that only translates JSON in and out. No ladder logic is ever duplicated
-per platform.
+GitHub Copilot, Cursor, OpenAI Codex, and Google Gemini CLI. It watches each
+session in the **free, observational pre-tool hook path** — so it adds **no token
+usage of its own** — and denies or checkpoints tool calls before a loop, a
+failure streak, or a runaway budget turns into spend. One neutral core holds all
+the escalation logic; each agent gets a thin adapter that only translates JSON in
+and out, so no ladder logic is ever duplicated per platform.
 
-> Started life as `copilot-cost-guard` (GitHub Copilot only). This rework freezes
-> a single canonical contract so the same engine governs every supported agent.
+## Install — pick your IDE
+
+Each supported IDE has its **own marketplace / extension entry in this one repo**,
+so you install with a single command from your own CLI. Pick your row:
+
+| IDE | Install command | Install method | Status |
+|---|---|---|---|
+| **Claude Code** | `/plugin marketplace add norequest/cost-guard` → `/plugin install cost-guard@cost-guard` | native marketplace | native ✅ |
+| **OpenAI Codex** | `codex plugin marketplace add norequest/cost-guard` → `codex plugin install cost-guard@cost-guard` | native marketplace | native ✅ |
+| **Google Gemini** | `gemini extensions install https://github.com/norequest/cost-guard` | native extension | native ✅ |
+| **GitHub Copilot (CLI)** | `copilot plugin install norequest/cost-guard` | native plugin | native ✅ |
+| **Cursor** | `install/install.sh cursor .` (writes `.cursor/hooks.json`) | installer / config file | file-based ⚠️ |
+| **GitHub Copilot (cloud agent)** | `install/install.sh copilot .` → commit `.github/hooks/cost-guard.json` | config file | file-based ⚠️ |
+
+**Requirements (all IDEs):** **bash + jq** on macOS/Linux (`brew install jq` /
+`apt install jq`), or **PowerShell 7+** on Windows. Every adapter ships a `.sh`
+and a `.ps1` sibling over one shared core (`core/guard.sh` / `core/guard.ps1`);
+the two engines are behaviorally identical and share one state schema.
+
+### Claude Code
+
+```
+/plugin marketplace add norequest/cost-guard      # or a local path: /plugin marketplace add ./cost-guard
+/plugin install cost-guard@cost-guard             # plugin@marketplace
+```
+
+Both the marketplace and the plugin are named `cost-guard`. The repo root **is**
+the plugin: `.claude-plugin/plugin.json` points `hooks` at
+`adapters/claude-code/hooks.json`, whose commands resolve via
+`${CLAUDE_PLUGIN_ROOT}`, so it works wherever it's installed from.
+
+### OpenAI Codex
+
+```
+codex plugin marketplace add norequest/cost-guard
+codex plugin install cost-guard@cost-guard
+```
+
+Requires a recent Codex (`plugin marketplace` support, **≥ ~v0.121**) with
+**`features.hooks` enabled** in your Codex config. `.codex-plugin/plugin.json`
+points `hooks` at `adapters/codex/hooks.json` (SessionStart / PreToolUse /
+PostToolUse / **Stop** → session end; Codex has no SessionEnd).
+
+### Google Gemini
+
+```
+gemini extensions install https://github.com/norequest/cost-guard
+```
+
+Requires **Gemini CLI ≥ v0.26.0** (hooks GA). The extension is defined by
+`gemini-extension.json`; Gemini auto-loads `hooks/hooks.json` by convention,
+which wires `SessionStart` / `BeforeTool` / `AfterTool` / `SessionEnd` via
+`${extensionPath}`.
+
+### GitHub Copilot (CLI)
+
+```
+copilot plugin install norequest/cost-guard
+```
+
+Requires a recent Copilot CLI with plugin support. The root `plugin.json` points
+`hooks` at `adapters/copilot/hooks.json`, which wires
+`sessionStart` / `preToolUse` / `postToolUse` / `errorOccurred` / `sessionEnd`.
+
+### Cursor
+
+Cursor has **no remote install for individuals yet**, so this path is file-based.
+The installer writes a ready-to-use hooks block:
+
+```bash
+install/install.sh cursor .        # writes .cursor/hooks.json + bundles core/ + adapter
+```
+
+It wires `sessionStart` / `preToolUse` / `postToolUse` / `postToolUseFailure` /
+`sessionEnd`. The pre-tool hook ships **`failClosed: false`** (fail-open, matching
+the project philosophy — a slow or broken guard *allows* the tool rather than
+bricking the session); flip it to `"failClosed": true` on the `preToolUse` entry
+for strict enforcement. When Cursor's reviewed official marketplace / Teams import
+lands, importing this repo (via `.cursor-plugin/`) becomes the native path.
+
+### GitHub Copilot (cloud coding agent)
+
+The cloud agent reads only repo-committed config, so this path is file-based:
+
+```bash
+install/install.sh copilot .       # writes .github/hooks/cost-guard.json (+ core/ + adapter)
+```
+
+Commit `.github/hooks/cost-guard.json` — hooks then apply whenever the Copilot
+cloud agent runs in the repo. The wiring declares both a `bash` and a
+`powershell` command per event; **the cloud agent runs on Linux**, so the bash
+path executes there.
+
+## How the marketplaces work
+
+This is **one repo that exposes a separate committed marketplace / extension
+manifest per IDE**. Each IDE reads a differently-named file, so there is no
+collision — the repo root is *simultaneously* a Claude plugin, a Codex plugin, a
+Gemini extension, and a Copilot plugin. You add only your own IDE's manifest.
+
+| IDE | Manifest you add | Points hooks at |
+|---|---|---|
+| Claude Code | `.claude-plugin/` (`marketplace.json` + `plugin.json`) | `adapters/claude-code/hooks.json` |
+| OpenAI Codex | `.agents/plugins/marketplace.json` + `.codex-plugin/plugin.json` | `adapters/codex/hooks.json` |
+| Google Gemini | `gemini-extension.json` + `hooks/hooks.json` (convention) | `adapters/gemini/adapter.sh` (via `${extensionPath}`) |
+| GitHub Copilot (CLI) | root `plugin.json` | `adapters/copilot/hooks.json` |
+| Cursor | `.cursor-plugin/` (`marketplace.json` + `plugin.json`) — Teams/official import | `adapters/cursor/hooks.json` |
+
+The **repo root is the plugin** in every case; each IDE's manifest points at its
+own hooks file because the hook schemas differ (event names, decision shape, path
+variable). All of them invoke `adapters/<ide>/adapter.sh <canonical-event>`,
+which self-resolves `core/` regardless of cwd — the tested core/adapter logic is
+identical across IDEs.
+
+> **Verification status.** The manifests are **schema-verified against the current
+> IDE docs** (JSON validates; every marketplace→source and manifest→hooks
+> reference resolves), and the core + adapters are runtime-tested (106-check suite
+> green). But the **native install paths on the non-Claude CLIs are new/preview**
+> (Codex `plugin marketplace` ~v0.121, Copilot CLI plugins preview-era, Gemini
+> extensions+hooks ≥ v0.26.0) and were not runtime-tested on the build machine —
+> treat them as "documented and wired," and do a local smoke test with each CLI
+> before relying on it. Full details:
+> [`docs/plans/2026-07-08-multi-marketplace.md`](docs/plans/2026-07-08-multi-marketplace.md).
 
 ## What it does
 
@@ -37,117 +159,24 @@ because hook payloads carry none.
 
 ## Supported platforms
 
-Honest support tiers — read the caveats before trusting enforcement.
+All five are **FULL for guard behavior**; read the caveats before trusting
+enforcement.
 
-| Platform | Tier | Notes |
-|---|---|---|
-| **Claude Code** | FULL (flagship) | loop / streak / ceiling / checkpoint + logging. Failure streak is best-effort: there is no dedicated tool-failure event, so it is inferred from `tool_response`. |
-| **GitHub Copilot** | FULL | The original target. Governs the Copilot CLI and the cloud agent. |
-| **Cursor** | FULL | `preToolUse` gate + `postToolUseFailure` + lifecycle. **Cloud agents drop `sessionStart`/`sessionEnd`** → the core bootstraps state lazily on the first pre-tool, so gating still works; only the end-of-session record is skipped in cloud. **`ask` is not enforced on `preToolUse`**, so the soft checkpoint degrades to **allow**. |
-| **OpenAI Codex** | FULL (≥ ~v0.117, `features.hooks`) | PreToolUse interception is solid for Bash but **uneven for `apply_patch` / MCP** — a guardrail, not a sandbox. Finalizes on `Stop` (Codex has no SessionEnd). **Older Codex** has only fire-and-forget `notify` → notify-only fallback. |
-| **Google Gemini** | FULL (≥ v0.26.0) | `BeforeTool` gate + `AfterTool` + lifecycle. Gemini has **no `ask`**, so the soft checkpoint degrades to **allow**. **Below v0.26.0**, only static `coreTools`/`excludeTools` allowlists exist. |
+| Platform | Tier | Install method | Notes |
+|---|---|---|---|
+| **Claude Code** | FULL (flagship) | native marketplace | loop / streak / ceiling / checkpoint + logging. Failure streak is best-effort: no dedicated tool-failure event, so it is inferred from `tool_response`. |
+| **GitHub Copilot** | FULL | native plugin (CLI) / config file (cloud) | The original target. Governs the Copilot CLI and the cloud agent; **cloud drops `sessionStart`/`sessionEnd`** so the core bootstraps state lazily on first pre-tool and only the end record is skipped. |
+| **Cursor** | FULL | installer / config file (native marketplace when available) | `preToolUse` gate + `postToolUseFailure` + lifecycle. **Cloud agents drop lifecycle** → state bootstraps lazily on first pre-tool; only the end record is skipped. **`ask` not enforced on `preToolUse`** → soft checkpoint degrades to **allow**. |
+| **OpenAI Codex** | FULL (≥ ~v0.117, `features.hooks`) | native marketplace | PreToolUse interception is solid for Bash but **uneven for `apply_patch` / MCP** — a guardrail, not a sandbox. Finalizes on `Stop` (no SessionEnd). **Older Codex** has only fire-and-forget `notify` → notify-only fallback. |
+| **Google Gemini** | FULL (≥ v0.26.0) | native extension | `BeforeTool` gate + `AfterTool` + lifecycle. Gemini has **no `ask`**, so the soft checkpoint degrades to **allow**. **Below v0.26.0**, only static `coreTools`/`excludeTools` allowlists exist. |
 
 The guard governs CLI / agent hook surfaces only — **not** IDE inline completions
 or IDE chat. Use your provider's usage-metrics API for those surfaces.
 
-## Install
-
-Requirements for every platform: **bash + jq** on macOS/Linux
-(`brew install jq` / `apt install jq`), or **PowerShell 7+** on Windows. Two
-engines ship — `core/guard.sh` (bash + jq; also what the Copilot cloud agent runs
-on Linux) and `core/guard.ps1` (PowerShell 7+, Windows) — and every adapter has a
-`.sh` and a `.ps1` sibling. The two are behaviorally identical and share one state
-schema.
-
-For the copy-based platforms (everything except Claude Code) a helper is provided:
-
-```bash
-install/install.sh <platform> <target-dir>   # e.g. install/install.sh cursor .
-```
-
-It wraps the manual copy + wiring steps below. The manual steps are the
-authoritative reference.
-
-### Claude Code
-
-The repo root is itself a Claude Code plugin **and** a single-plugin marketplace,
-so no copying is required:
-
-```
-/plugin marketplace add norequest/cost-guard      # or a local path: /plugin marketplace add ./cost-guard
-/plugin install cost-guard@cost-guard            # plugin@marketplace
-```
-
-Both the marketplace and the plugin are named `cost-guard`. `plugin.json` points
-`hooks` at `adapters/claude-code/hooks.json`, whose commands resolve via
-`${CLAUDE_PLUGIN_ROOT}`, so it works wherever the plugin is installed from.
-
-### GitHub Copilot
-
-Copy the neutral core and the Copilot adapter into your repo's `.github/hooks/`,
-then commit:
-
-```
-.github/hooks/cost-guard.json          # from adapters/copilot/cost-guard.json (the wiring)
-.github/hooks/cost-guard/adapter.sh    # from adapters/copilot/adapter.sh
-.github/hooks/cost-guard/core/guard.sh # from core/guard.sh
-```
-
-Or run `install/install.sh copilot <dir>`. The wiring config
-declares both a `bash` and a `powershell` command per event, so the same file
-works on macOS, Linux, and Windows. **The cloud agent runs on Linux**, so the
-bash path is what executes there. Commit — hooks apply whenever the Copilot CLI
-or cloud agent runs in the repo.
-
-### Cursor
-
-Copy the core and the Cursor adapter into `.cursor/hooks/cost-guard/`, then add
-the wiring block:
-
-```
-.cursor/hooks/cost-guard/adapter.sh    # from adapters/cursor/adapter.sh
-.cursor/hooks/cost-guard/core/guard.sh # from core/guard.sh
-```
-
-Merge the block from `adapters/cursor/hooks.json` into your `.cursor/hooks.json`
-(it wires `sessionStart`, `preToolUse`, `postToolUse`, `postToolUseFailure`,
-`sessionEnd`). The pre-tool hook ships with **`failClosed: false`** (fail-open,
-matching the project philosophy — a slow or broken guard allows the tool rather
-than bricking the session). Cursor users who want strict enforcement can flip it
-to `"failClosed": true` on the `preToolUse` entry.
-
-### OpenAI Codex
-
-Requires Codex **≥ ~v0.117** with `features.hooks` enabled. Copy the core and the
-Codex adapter into `.codex/hooks/cost-guard/`:
-
-```
-.codex/hooks/cost-guard/adapter.sh     # from adapters/codex/adapter.sh
-.codex/hooks/cost-guard/core/guard.sh  # from core/guard.sh
-```
-
-Merge the block from `adapters/codex/hooks.json` into your `.codex/hooks.json`
-(SessionStart / PreToolUse / PostToolUse / **Stop** → session end), and make sure
-`features.hooks` is turned on in your Codex config.
-
-### Google Gemini
-
-Requires Gemini CLI **≥ v0.26.0** (hooks GA). Copy the core and the Gemini
-adapter into `.gemini/hooks/cost-guard/`:
-
-```
-.gemini/hooks/cost-guard/adapter.sh    # from adapters/gemini/adapter.sh
-.gemini/hooks/cost-guard/core/guard.sh # from core/guard.sh
-```
-
-Merge the `hooks` block from `adapters/gemini/settings.hooks.json` into your
-Gemini `settings.json` (`~/.gemini/settings.json` or `<project>/.gemini/settings.json`).
-It wires `SessionStart`, `BeforeTool`, `AfterTool`, and `SessionEnd`.
-
 ## Configuration
 
-Every threshold is an environment variable with a sane default. On the copy-based
-platforms you can also set these per-hook via the wiring file's `env` field.
+Every threshold is an environment variable with a sane default. On the file-based
+installs you can also set these per-hook via the wiring file's `env` field.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -174,8 +203,8 @@ export COST_GUARD_COLLECTOR_URL=http://your-host:8787/
 - `GET /stats` — totals and per-user aggregates (sessions, tool calls, denials,
   loops, wasted sessions, avg duration).
 - Records carry `user`, `gitEmail`, and `host` (captured locally at session
-  start, since hook payloads contain no identity) and now also a **`platform`**
-  field, so a single collector can aggregate across all five agents.
+  start, since hook payloads contain no identity) and a **`platform`** field, so a
+  single collector can aggregate across all five agents.
 
 For production, put it behind TLS/auth or swap it for your observability stack —
 the hooks just POST one small JSON object per session.
@@ -262,18 +291,33 @@ next to the adapter, or the repo-relative `../../core`.
 
 ## Files / layout
 
+The repo root **is** the plugin/extension. Each IDE reads its own manifest; all of
+them point at one shared `core/` through a thin per-IDE adapter.
+
 ```
-.claude-plugin/{plugin.json, marketplace.json}   # Claude Code plugin + single-plugin marketplace
-core/{guard.sh, guard.ps1}                        # the neutral engine (bash+jq / PowerShell 7+)
-adapters/claude-code/{adapter.sh, adapter.ps1, hooks.json}   # per-platform adapters + wiring
-adapters/copilot/{adapter.sh, adapter.ps1, cost-guard.json}
-adapters/cursor/{adapter.sh, adapter.ps1, hooks.json}
-adapters/codex/{adapter.sh, adapter.ps1, hooks.json}
-adapters/gemini/{adapter.sh, adapter.ps1, settings.hooks.json}
-collector/collector.py                            # zero-dependency central collector
-install/install.sh                                # assembles a self-contained install per platform
-tests/{run.sh, payloads/}                         # 106-check verification harness
-docs/plans/                                        # design docs
+cost-guard/                            # repo root == the plugin / extension
+├── .claude-plugin/
+│   ├── marketplace.json               # Claude Code marketplace (plugin source "./")
+│   └── plugin.json                    # hooks → adapters/claude-code/hooks.json
+├── .agents/plugins/marketplace.json   # Codex marketplace
+├── .codex-plugin/plugin.json          # hooks → adapters/codex/hooks.json
+├── .cursor-plugin/
+│   ├── marketplace.json               # Cursor marketplace (Teams / official import)
+│   └── plugin.json                    # hooks → adapters/cursor/hooks.json
+├── gemini-extension.json              # Gemini extension manifest
+├── hooks/hooks.json                   # Gemini hooks (convention path; ${extensionPath})
+├── plugin.json                        # Copilot CLI plugin  (hooks → adapters/copilot/hooks.json)
+├── core/{guard.sh, guard.ps1}         # the neutral engine (bash+jq / PowerShell 7+)
+├── adapters/
+│   ├── claude-code/{adapter.sh, adapter.ps1, hooks.json}
+│   ├── codex/{adapter.sh, adapter.ps1, hooks.json}
+│   ├── copilot/{adapter.sh, adapter.ps1, hooks.json, cost-guard.json}   # cost-guard.json = .github cloud wiring
+│   ├── cursor/{adapter.sh, adapter.ps1, hooks.json}
+│   └── gemini/{adapter.sh, adapter.ps1, settings.hooks.json}
+├── install/install.sh                 # Cursor individuals + Copilot cloud + native-command printer
+├── collector/collector.py             # zero-dependency central collector
+├── tests/{run.sh, payloads/}          # 106-check verification harness
+└── docs/plans/                        # design + multi-marketplace docs
 ```
 
 ## License

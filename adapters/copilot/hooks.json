@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "type": "command", "bash": "adapters/copilot/adapter.sh session-start", "powershell": "adapters/copilot/adapter.ps1 session-start", "timeoutSec": 10 }
+    ],
+    "preToolUse": [
+      { "type": "command", "bash": "adapters/copilot/adapter.sh pre-tool", "powershell": "adapters/copilot/adapter.ps1 pre-tool", "timeoutSec": 5 }
+    ],
+    "postToolUse": [
+      { "type": "command", "bash": "adapters/copilot/adapter.sh post-tool", "powershell": "adapters/copilot/adapter.ps1 post-tool", "timeoutSec": 5 }
+    ],
+    "errorOccurred": [
+      { "type": "command", "bash": "adapters/copilot/adapter.sh error", "powershell": "adapters/copilot/adapter.ps1 error", "timeoutSec": 5 }
+    ],
+    "sessionEnd": [
+      { "type": "command", "bash": "adapters/copilot/adapter.sh session-end", "powershell": "adapters/copilot/adapter.ps1 session-end", "timeoutSec": 15 }
+    ]
+  }
+}
