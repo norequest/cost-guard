@@ -154,14 +154,25 @@ ultimately invoke `adapters/<ide>/adapter.sh <canonical-event>`, which
 self-resolves `core/` regardless of cwd; the tested core/adapter logic is
 identical across IDEs.
 
-> **Verification status.** The manifests are **schema-verified against the
-> current IDE docs** (JSON validates; every marketplace→source and
-> manifest→hooks reference resolves), and the core + adapters are runtime-tested
-> (130-check bash suite green, plus a PowerShell parity suite). But the **native install paths on the non-Claude CLIs
-> are new/preview** (Codex `plugin marketplace` ~v0.121, Copilot CLI plugins
-> preview-era, Gemini extensions+hooks ≥ v0.26.0) and were not runtime-tested on
-> the build machine. Treat them as "documented and wired," and do a local smoke
-> test with each CLI before relying on it.
+> **Verification status.** Three tiers:
+>
+> - **Core and adapters: runtime-tested.** A 130-check bash suite plus a
+>   PowerShell parity suite, green in CI on Ubuntu, macOS, and Windows.
+> - **Cursor and Copilot cloud installs: runtime-tested.** The
+>   `tests/smoke-cursor.sh` and `tests/smoke-copilot.sh` integration tests install
+>   into a throwaway project and drive each hook lifecycle the way the agent does
+>   (the wired command, its real cwd, the payload on stdin), asserting allow/deny
+>   gating, the session ledger, Cursor's `${CLAUDE_PLUGIN_ROOT}` wiring, and
+>   Copilot cloud's lazy bootstrap (a first pre-tool with no session-start still
+>   gates). Both run in CI on Ubuntu and macOS. The only unverified piece is each
+>   runtime's own parse of its hooks manifest (which payload fields it passes,
+>   `failClosed` handling), which needs the actual IDE or cloud.
+> - **Codex, Copilot CLI (native plugin), and Gemini: schema-verified only.** JSON
+>   validates and every marketplace source and manifest hooks reference resolves,
+>   but these paths are new/preview (Codex `plugin marketplace` ~v0.121, Copilot
+>   CLI plugins preview-era, Gemini extensions + hooks ≥ v0.26.0) and are not yet
+>   runtime-tested here. Treat them as "documented and wired," and smoke-test with
+>   each CLI before relying on them.
 
 ## What it does
 
