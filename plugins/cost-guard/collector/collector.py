@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tiny central collector for copilot-cost-guard session records.
+Tiny central collector for cost-guard session records.
 
 Zero dependencies (Python 3.8+ stdlib only).
 

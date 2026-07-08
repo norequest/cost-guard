@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7
 # cost-guard :: OpenAI Codex CLI adapter (PowerShell 7+)
 #
 # Usage (wired in .codex/hooks.json): adapter.ps1 <canonical-event>

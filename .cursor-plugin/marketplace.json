@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "General norequest plugin marketplace. Current plugin: cost-guard, platform-neutral cost and runaway control for AI coding agents.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "cost-guard",
       "source": "./plugins/cost-guard",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Detects loops, failure streaks, and tool-call/time budgets in the free preToolUse path, then denies or checkpoints before spend runs away.",
       "author": { "name": "Prixio" },
       "license": "MIT"

@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7
 # cost-guard :: GitHub Copilot CLI / cloud-agent adapter (PowerShell 7+)
 #
 # Usage (wired in cost-guard.json): adapter.ps1 <canonical-event>

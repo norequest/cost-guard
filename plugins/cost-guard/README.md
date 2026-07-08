@@ -26,9 +26,13 @@ so you install with a single command from your own CLI. Pick your row:
 | **GitHub Copilot (cloud agent)** | `plugins/cost-guard/install/install.sh copilot .` → commit `.github/hooks/cost-guard.json` | config file | file-based ⚠️ |
 
 **Requirements (all IDEs):** **bash + jq** on macOS/Linux (`brew install jq` /
-`apt install jq`), or **PowerShell 7+** on Windows. Every adapter ships a `.sh`
-and a `.ps1` sibling over one shared core (`core/guard.sh` / `core/guard.ps1`);
-the two engines are behaviorally identical and share one state schema.
+`apt install jq`). Every adapter ships a `.sh` and a `.ps1` sibling over one
+shared core (`core/guard.sh` / `core/guard.ps1`), the two engines share one
+state schema, and a PowerShell parity suite runs in CI on Windows. As shipped
+today, though, the native hook manifests for Claude Code, Codex, Gemini, and
+Cursor invoke the `.sh` adapter, so on Windows those IDEs need bash on PATH
+(Git Bash or WSL). Copilot wires bash and PowerShell command pairs, and the
+file-based installs ship both engines.
 
 ### Claude Code
 
@@ -149,12 +153,14 @@ regardless of cwd; the tested core/adapter logic is identical across IDEs.
 ## What it does
 
 Per session (keyed by the platform's session id), the guard tracks tool calls,
-identical-call repeats, failure streaks, wall-clock time, and tool-output volume,
+consecutive identical-call repeats, failure streaks, wall-clock time, and tool-output volume,
 then enforces a 5-rung escalation ladder in the pre-tool hook, evaluated in this
 order, first match wins:
 
-1. **Loop**: the same `{tool, args}` fingerprint repeated more than `MAX_REPEATS`
-   times → **deny**, with an instructive reason that un-sticks the agent.
+1. **Loop**: the same `{tool, args}` fingerprint attempted more than
+   `MAX_REPEATS` times **in a row** → **deny**, with an instructive reason that
+   un-sticks the agent. Only consecutive repeats count: re-running a command
+   later in the session does not trip it.
 2. **Failure streak**: `MAX_FAIL_STREAK` or more consecutive tool errors →
    **deny**, force a summary.
 3. **Hard ceiling**: `MAX_CALLS` tool calls or `MAX_MINUTES` wall-clock →
@@ -163,7 +169,8 @@ order, first match wins:
    (or **deny** in CI via `COST_GUARD_SOFT_ACTION`).
 5. otherwise → **allow**.
 
-State is one JSON file per session under `COST_GUARD_STATE_DIR`. On session end
+State is one JSON file per session under `COST_GUARD_STATE_DIR` (by default a
+per-user directory under the system temp dir). On session end
 the core writes one JSONL record (who, platform, duration, call count, denials,
 asks, loops, end reason) to `sessions.jsonl` in `COST_GUARD_LOG_DIR`, additionally
 flags `error` / `timeout` / `abort` sessions into `wasted-sessions.jsonl`, and,
@@ -241,11 +248,11 @@ installs you can also set these per-hook via the wiring file's `env` field.
 |---|---|---|
 | `COST_GUARD_MAX_CALLS` | `120` | Hard ceiling on tool calls per session |
 | `COST_GUARD_SOFT_CALLS` | `50` | Soft-checkpoint threshold (then every 25 calls) |
-| `COST_GUARD_MAX_REPEATS` | `3` | Identical `{tool,args}` repeats before a loop deny |
+| `COST_GUARD_MAX_REPEATS` | `3` | Consecutive identical `{tool,args}` attempts before a loop deny (a repeat later in the session does not count) |
 | `COST_GUARD_MAX_MINUTES` | `30` | Wall-clock budget per session |
 | `COST_GUARD_MAX_FAIL_STREAK` | `5` | Consecutive tool errors before deny |
 | `COST_GUARD_SOFT_ACTION` | `ask` | Soft-checkpoint action; set to `deny` for CI / pipe mode where no interactive prompt exists |
-| `COST_GUARD_STATE_DIR` | system temp (`$TMPDIR/cost-guard`) | Where per-session state files live |
+| `COST_GUARD_STATE_DIR` | per-user temp dir | Where per-session state files live. Default: `cost-guard-<uid>` under the system temp dir on macOS/Linux, `cost-guard-<username>` under `%TEMP%` on Windows |
 | `COST_GUARD_LOG_DIR` | `~/.cost-guard` | Where `sessions.jsonl` / `wasted-sessions.jsonl` are written |
 | `COST_GUARD_COLLECTOR_URL` | unset | If set, session end POSTs the record here |
 | `COST_GUARD_CORE` | unset | Explicit path to `core/guard.sh` (adapters otherwise auto-resolve it) |

@@ -1,6 +1,6 @@
 {
   "name": "cost-guard",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Platform-neutral cost & runaway control for AI coding agents. Detects loops, failure streaks, and tool-call/time budgets in the free pre-tool path, then denies or checkpoints before spend runs away.",
   "hooks": "./adapters/codex/hooks.json",
   "author": {

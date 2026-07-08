@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
   "name": "norequest",
   "description": "Plugins for AI coding agents from norequest. Current plugins: cost-guard, a cost and runaway guard for Claude Code, Codex, Gemini, Copilot CLI and Cursor.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "owner": {
     "name": "Prixio"
   },
@@ -11,7 +11,7 @@
       "name": "cost-guard",
       "source": "./plugins/cost-guard",
       "description": "Detects loops, failure streaks, and tool-call/time budgets in the free preToolUse path, then denies or checkpoints before spend runs away. Writes one session record per run and can POST to a central collector.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "category": "observability",
       "keywords": ["cost", "budget", "guard", "runaway", "finops"],
       "license": "MIT"

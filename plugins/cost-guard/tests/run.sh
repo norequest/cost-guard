@@ -211,6 +211,141 @@ for P in $PLATFORMS; do
   test_platform "$P"
 done
 
+# ================================================================ core suite
+# These exercise core/guard.sh directly with its own canonical event shape
+# (event/sessionId/tool/args/platform) rather than through an adapter, since
+# state-dir hardening, corrupt-state repair, the loop streak, time-budget
+# sanity, env validation, and locking are all platform-neutral core behavior.
+core_start() { jq -nc --arg s "$1" '{event:"session-start", sessionId:$s, cwd:"/repo", source:"cli", platform:"core-test"}'; }
+core_pre()   { jq -nc --arg s "$1" --arg t "$2" --argjson a "$3" '{event:"pre-tool", sessionId:$s, tool:$t, args:$a, platform:"core-test"}'; }
+
+test_core_hardening() {
+  printf '\n=== core hardening ===\n'
+
+  # ---- (i) state dir hardening: per-uid default, real dir, mode 700, not a symlink ----
+  DEFAULT_STATE_DIR="${TMPDIR:-/tmp}"
+  case "$DEFAULT_STATE_DIR" in */) : ;; *) DEFAULT_STATE_DIR="$DEFAULT_STATE_DIR/" ;; esac
+  DEFAULT_STATE_DIR="${DEFAULT_STATE_DIR}cost-guard-$(id -u)"
+  rm -rf "$DEFAULT_STATE_DIR" 2>/dev/null
+  ( unset COST_GUARD_STATE_DIR
+    COST_GUARD_LOG_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t cgdeflog)" \
+      bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_start cg-defaultdir)" )
+  check "(i) default state dir is created" 1 "$([ -d "$DEFAULT_STATE_DIR" ] && echo 1 || echo 0)"
+  check "(i) default state dir is not a symlink" 1 "$([ ! -L "$DEFAULT_STATE_DIR" ] && echo 1 || echo 0)"
+  # shellcheck disable=SC2012 # single known path, not a filename listing
+  perm=$(ls -ld "$DEFAULT_STATE_DIR" 2>/dev/null | cut -c1-10)
+  check "(i) default state dir mode is 700 (drwx------)" "drwx------" "$perm"
+  rm -rf "$DEFAULT_STATE_DIR" 2>/dev/null
+
+  # ---- (ii) corrupt state file: pre-tool succeeds, stderr mentions reset, state resumes fresh ----
+  CS_STATE=$(mktemp -d 2>/dev/null || mktemp -d -t cgcorrupt)
+  CS_LOG=$(mktemp -d 2>/dev/null || mktemp -d -t cgcorruptlog)
+  env COST_GUARD_STATE_DIR="$CS_STATE" COST_GUARD_LOG_DIR="$CS_LOG" \
+    bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_start cg-corrupt)"
+  printf 'THIS IS NOT JSON {{{' > "$CS_STATE/cg-corrupt.json"
+  CS_ERR=$(mktemp 2>/dev/null || mktemp -t cgcorrupterr)
+  cs_out=$(env COST_GUARD_STATE_DIR="$CS_STATE" COST_GUARD_LOG_DIR="$CS_LOG" \
+    bash "$REPO/core/guard.sh" 2>"$CS_ERR" <<< "$(core_pre cg-corrupt Bash '{"command":"ls"}')")
+  check "(ii) corrupt-state pre-tool -> allow" allow "$(printf '%s' "$cs_out" | jq -r '.decision // "none"')"
+  contains "(ii) corrupt-state stderr mentions reset" "state was corrupt, reset" "$(cat "$CS_ERR")"
+  check "(ii) corrupt-state repaired: count resumes at 1" 1 "$(jq -r '.count' "$CS_STATE/cg-corrupt.json" 2>/dev/null)"
+  rm -f "$CS_ERR"; rm -rf "$CS_STATE" "$CS_LOG"
+
+  # ---- (iii) empty state file: same contract as corrupt ----
+  ES_STATE=$(mktemp -d 2>/dev/null || mktemp -d -t cgempty)
+  ES_LOG=$(mktemp -d 2>/dev/null || mktemp -d -t cgemptylog)
+  env COST_GUARD_STATE_DIR="$ES_STATE" COST_GUARD_LOG_DIR="$ES_LOG" \
+    bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_start cg-empty)"
+  : > "$ES_STATE/cg-empty.json"
+  ES_ERR=$(mktemp 2>/dev/null || mktemp -t cgemptyerr)
+  es_out=$(env COST_GUARD_STATE_DIR="$ES_STATE" COST_GUARD_LOG_DIR="$ES_LOG" \
+    bash "$REPO/core/guard.sh" 2>"$ES_ERR" <<< "$(core_pre cg-empty Bash '{"command":"ls"}')")
+  check "(iii) empty-state pre-tool -> allow" allow "$(printf '%s' "$es_out" | jq -r '.decision // "none"')"
+  contains "(iii) empty-state stderr mentions reset" "state was corrupt, reset" "$(cat "$ES_ERR")"
+  check "(iii) empty-state repaired: count resumes at 1" 1 "$(jq -r '.count' "$ES_STATE/cg-empty.json" 2>/dev/null)"
+  rm -f "$ES_ERR"; rm -rf "$ES_STATE" "$ES_LOG"
+
+  # ---- (iv) consecutive-streak loop rule (defaults: MAX_REPEATS=3) ----
+  LP_STATE=$(mktemp -d 2>/dev/null || mktemp -d -t cgloop)
+  LP_LOG=$(mktemp -d 2>/dev/null || mktemp -d -t cglooplog)
+
+  env COST_GUARD_STATE_DIR="$LP_STATE" COST_GUARD_LOG_DIR="$LP_LOG" \
+    bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_start cg-streak4)"
+  for _ in 1 2 3; do
+    env COST_GUARD_STATE_DIR="$LP_STATE" COST_GUARD_LOG_DIR="$LP_LOG" \
+      bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_pre cg-streak4 Bash '{"command":"same"}')"
+  done
+  loop4=$(env COST_GUARD_STATE_DIR="$LP_STATE" COST_GUARD_LOG_DIR="$LP_LOG" \
+    bash "$REPO/core/guard.sh" <<< "$(core_pre cg-streak4 Bash '{"command":"same"}')")
+  check "(iv) 4x identical calls in a row deny on the 4th (default MAX_REPEATS)" deny "$(printf '%s' "$loop4" | jq -r '.decision')"
+  contains "(iv) loop deny uses the new phrasing" "attempted 4 times in a row" "$(printf '%s' "$loop4" | jq -r '.reason')"
+
+  env COST_GUARD_STATE_DIR="$LP_STATE" COST_GUARD_LOG_DIR="$LP_LOG" \
+    bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_start cg-aabaa)"
+  seq_denied=allow
+  for spec in A A B A A; do
+    out=$(env COST_GUARD_STATE_DIR="$LP_STATE" COST_GUARD_LOG_DIR="$LP_LOG" \
+      bash "$REPO/core/guard.sh" <<< "$(core_pre cg-aabaa Bash "$(jq -nc --arg c "$spec" '{command:$c}')")")
+    [ "$(printf '%s' "$out" | jq -r '.decision')" = deny ] && seq_denied=deny
+  done
+  check "(iv) A,A,B,A,A with default MAX_REPEATS never denies" allow "$seq_denied"
+  rm -rf "$LP_STATE" "$LP_LOG"
+
+  # ---- (v) MAX_MINUTES time budget with a crafted stale startedAt ----
+  TB_STATE=$(mktemp -d 2>/dev/null || mktemp -d -t cgtime)
+  TB_LOG=$(mktemp -d 2>/dev/null || mktemp -d -t cgtimelog)
+  env COST_GUARD_STATE_DIR="$TB_STATE" COST_GUARD_LOG_DIR="$TB_LOG" \
+    bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_start cg-timebudget)"
+  TWO_H_AGO=$(( $(date +%s) - 7200 ))
+  jq --argjson t "$TWO_H_AGO" '.startedAt = $t' "$TB_STATE/cg-timebudget.json" > "$TB_STATE/cg-timebudget.json.tmp" \
+    && mv "$TB_STATE/cg-timebudget.json.tmp" "$TB_STATE/cg-timebudget.json"
+  tb_out=$(env COST_GUARD_STATE_DIR="$TB_STATE" COST_GUARD_LOG_DIR="$TB_LOG" COST_GUARD_MAX_MINUTES=1 \
+    bash "$REPO/core/guard.sh" <<< "$(core_pre cg-timebudget Bash '{"command":"x"}')")
+  check "(v) MAX_MINUTES=1 with a 2h-old startedAt -> deny" deny "$(printf '%s' "$tb_out" | jq -r '.decision')"
+  contains "(v) time-budget deny names the budget" "time budget exhausted" "$(printf '%s' "$tb_out" | jq -r '.reason')"
+
+  # ---- (vi) startedAt in the future resets instead of denying ----
+  env COST_GUARD_STATE_DIR="$TB_STATE" COST_GUARD_LOG_DIR="$TB_LOG" \
+    bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_start cg-futurestart)"
+  FUTURE=$(( $(date +%s) + 100000 ))
+  jq --argjson t "$FUTURE" '.startedAt = $t' "$TB_STATE/cg-futurestart.json" > "$TB_STATE/cg-futurestart.json.tmp" \
+    && mv "$TB_STATE/cg-futurestart.json.tmp" "$TB_STATE/cg-futurestart.json"
+  fut_out=$(env COST_GUARD_STATE_DIR="$TB_STATE" COST_GUARD_LOG_DIR="$TB_LOG" COST_GUARD_MAX_MINUTES=1 \
+    bash "$REPO/core/guard.sh" <<< "$(core_pre cg-futurestart Bash '{"command":"x"}')")
+  check "(vi) future startedAt resets instead of denying" allow "$(printf '%s' "$fut_out" | jq -r '.decision')"
+  new_started=$(jq -r '.startedAt' "$TB_STATE/cg-futurestart.json" 2>/dev/null)
+  now_ts=$(date +%s)
+  check "(vi) startedAt reset to <= now" 1 "$( [ -n "$new_started" ] && [ "$new_started" -le "$now_ts" ] 2>/dev/null && echo 1 || echo 0)"
+  rm -rf "$TB_STATE" "$TB_LOG"
+
+  # ---- (vii) invalid numeric env falls back to the default, no crash ----
+  BE_STATE=$(mktemp -d 2>/dev/null || mktemp -d -t cgbadenv)
+  BE_LOG=$(mktemp -d 2>/dev/null || mktemp -d -t cgbadenvlog)
+  env COST_GUARD_STATE_DIR="$BE_STATE" COST_GUARD_LOG_DIR="$BE_LOG" \
+    bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_start cg-badenv)"
+  BE_ERR=$(mktemp 2>/dev/null || mktemp -t cgbadenverr)
+  be_out=$(env COST_GUARD_STATE_DIR="$BE_STATE" COST_GUARD_LOG_DIR="$BE_LOG" COST_GUARD_MAX_CALLS=banana \
+    bash "$REPO/core/guard.sh" 2>"$BE_ERR" <<< "$(core_pre cg-badenv Bash '{"command":"x"}')")
+  check "(vii) COST_GUARD_MAX_CALLS=banana falls back, still allow" allow "$(printf '%s' "$be_out" | jq -r '.decision // "none"')"
+  contains "(vii) invalid numeric env is noted on stderr" "COST_GUARD_MAX_CALLS" "$(cat "$BE_ERR")"
+  rm -f "$BE_ERR"; rm -rf "$BE_STATE" "$BE_LOG"
+
+  # ---- (viii) concurrency: 10 parallel pre-tool calls -> lock keeps count exact ----
+  CC_STATE=$(mktemp -d 2>/dev/null || mktemp -d -t cgconc)
+  CC_LOG=$(mktemp -d 2>/dev/null || mktemp -d -t cgconclog)
+  env COST_GUARD_STATE_DIR="$CC_STATE" COST_GUARD_LOG_DIR="$CC_LOG" \
+    bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_start cg-conc)"
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    ( env COST_GUARD_STATE_DIR="$CC_STATE" COST_GUARD_LOG_DIR="$CC_LOG" \
+        bash "$REPO/core/guard.sh" >/dev/null <<< "$(core_pre cg-conc Bash "$(jq -nc --arg c "step$i" '{command:$c}')")" ) &
+  done
+  wait
+  check "(viii) 10 parallel pre-tool calls record exactly 10 (lock)" 10 "$(jq -r '.count' "$CC_STATE/cg-conc.json" 2>/dev/null)"
+  rm -rf "$CC_STATE" "$CC_LOG"
+}
+
+test_core_hardening
+
 printf '\n---------------------------------------------\n'
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -11,13 +11,18 @@
 #                            .github/hooks/ into a target project to be committed.
 #
 # Usage (from the repo root):
-#   plugins/cost-guard/install/install.sh                      # per-IDE menu (same as help / -h)
-#   plugins/cost-guard/install/install.sh <ide>                # native IDEs: print the install command
-#   plugins/cost-guard/install/install.sh cursor  <target-dir> # file install (individuals)
-#   plugins/cost-guard/install/install.sh copilot <target-dir> # file install (cloud agent / repo hooks)
+#   plugins/cost-guard/install/install.sh                                # per-IDE menu (same as help / -h)
+#   plugins/cost-guard/install/install.sh <ide>                          # native IDEs: print the install command
+#   plugins/cost-guard/install/install.sh cursor  <target-dir>           # file install (individuals)
+#   plugins/cost-guard/install/install.sh copilot <target-dir>           # file install (cloud agent / repo hooks)
+#   plugins/cost-guard/install/install.sh uninstall cursor  <target-dir> # remove a cursor file install
+#   plugins/cost-guard/install/install.sh uninstall copilot <target-dir> # remove a copilot file install
 #
 #   <ide> (native)  : claude | claude-code | codex | gemini | copilot-cli
 #   <ide> (file)    : cursor | copilot
+#
+# The copilot file install refuses to overwrite an existing install; set FORCE=1
+# to overwrite, or run the uninstall subcommand first.
 #
 # Dependency-light on purpose: only cp / mkdir / chmod / printf touch the system.
 # jq is optional (the runtime hook needs it, the installer does not).
@@ -53,6 +58,11 @@ Two paths are file-based — this script installs them into a target project:
 
   Copilot cloud  plugins/cost-guard/install/install.sh copilot <target-dir>
                  (writes .github/hooks/ for the cloud agent — commit it)
+
+Uninstall a file-based install (removes the files this script wrote):
+
+  plugins/cost-guard/install/install.sh uninstall cursor  <target-dir>
+  plugins/cost-guard/install/install.sh uninstall copilot <target-dir>
 
 Reprint a native IDE's command:
   plugins/cost-guard/install/install.sh claude | codex | gemini | copilot-cli
@@ -107,11 +117,13 @@ EOF
 }
 
 # ------------------------------------------------------- file-install helpers --
-# require_target : the file installs need an existing target project dir.
+# require_target : the file installs (and uninstalls) need an existing target
+# project dir. $MODE is "uninstall " when dispatched via the uninstall
+# subcommand, empty otherwise (only used for the usage message).
 require_target() {
   if [ -z "$TARGET" ]; then
-    echo "error: <target-dir> is required for '$IDE' (file install)" >&2
-    echo "usage: plugins/cost-guard/install/install.sh $IDE <target-dir>" >&2
+    echo "error: <target-dir> is required for '${MODE}${IDE}'" >&2
+    echo "usage: plugins/cost-guard/install/install.sh ${MODE}${IDE} <target-dir>" >&2
     exit 2
   fi
   if [ ! -d "$TARGET" ]; then
@@ -168,6 +180,69 @@ cursor_hooks_json() {
 }
 JSON
 }
+
+# ---------------------------------------------------------------- uninstall ----
+MODE=""
+if [ "${1:-}" = "uninstall" ]; then
+  MODE="uninstall "
+  IDE="${2:-}"
+  TARGET="${3:-}"
+
+  case "$IDE" in
+
+    cursor)
+      require_target
+      DEST="$TARGET/.cursor/hooks/cost-guard"
+      if [ ! -d "$DEST" ]; then
+        echo "nothing to remove: $DEST does not exist" >&2
+        exit 0
+      fi
+      rm -rf "$DEST"
+      cat <<EOF
+Removed:
+  $DEST/
+
+Left in place (this script never edits your hooks wiring on uninstall):
+  $TARGET/.cursor/hooks.json
+
+Remove the cost-guard entries (the ".cursor/hooks/cost-guard/adapter.sh ..."
+commands) from that file yourself, or delete the file if cost-guard was the
+only thing in it.
+EOF
+      exit 0
+      ;;
+
+    copilot)
+      require_target
+      HOOKS_DIR="$TARGET/.github/hooks"
+      REMOVED=0
+      if [ -d "$HOOKS_DIR/cost-guard" ]; then
+        rm -rf "$HOOKS_DIR/cost-guard"
+        echo "Removed: $HOOKS_DIR/cost-guard/"
+        REMOVED=1
+      fi
+      if [ -f "$HOOKS_DIR/cost-guard.json" ]; then
+        rm -f "$HOOKS_DIR/cost-guard.json"
+        echo "Removed: $HOOKS_DIR/cost-guard.json"
+        REMOVED=1
+      fi
+      if [ "$REMOVED" -eq 0 ]; then
+        echo "nothing to remove: no cost-guard files under $HOOKS_DIR" >&2
+      fi
+      exit 0
+      ;;
+
+    "")
+      echo "error: uninstall needs an IDE: uninstall cursor|copilot <target-dir>" >&2
+      exit 2
+      ;;
+
+    *)
+      echo "error: unknown uninstall target '$IDE' (expected: cursor | copilot)" >&2
+      exit 2
+      ;;
+  esac
+fi
 
 # ----------------------------------------------------------------- dispatch ----
 IDE="${1:-}"
@@ -242,6 +317,29 @@ EOF
   copilot)
     require_target
     HOOKS_DIR="$TARGET/.github/hooks"
+
+    # No-clobber: refuse to overwrite an existing install (same protection the
+    # cursor branch gives .cursor/hooks.json). FORCE=1 overrides.
+    if [ "${FORCE:-0}" != "1" ]; then
+      if [ -e "$HOOKS_DIR/cost-guard.json" ] || [ -e "$HOOKS_DIR/cost-guard" ]; then
+        {
+          echo "error: cost-guard already appears to be installed in $TARGET:"
+          if [ -e "$HOOKS_DIR/cost-guard.json" ]; then
+            echo "  $HOOKS_DIR/cost-guard.json"
+          fi
+          if [ -e "$HOOKS_DIR/cost-guard" ]; then
+            echo "  $HOOKS_DIR/cost-guard/"
+          fi
+          echo
+          echo "NOT overwriting. To replace it, re-run with FORCE=1:"
+          echo "  FORCE=1 plugins/cost-guard/install/install.sh copilot $TARGET"
+          echo "or remove the old install first:"
+          echo "  plugins/cost-guard/install/install.sh uninstall copilot $TARGET"
+        } >&2
+        exit 3
+      fi
+    fi
+
     assemble "$REPO/adapters/copilot" "$HOOKS_DIR/cost-guard"
     mkdir -p "$HOOKS_DIR"
     cp "$REPO/adapters/copilot/cost-guard.json" "$HOOKS_DIR/cost-guard.json"

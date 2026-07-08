@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-bash:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              brew install jq
+            else
+              sudo apt-get update && sudo apt-get install -y jq
+            fi
+          fi
+          jq --version
+      - name: Run bash test suite
+        run: bash plugins/cost-guard/tests/run.sh
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck
+        run: |
+          shellcheck --version
+          shellcheck \
+            plugins/cost-guard/core/guard.sh \
+            plugins/cost-guard/adapters/*/adapter.sh \
+            plugins/cost-guard/install/install.sh \
+            plugins/cost-guard/tests/run.sh
+
+  test-pwsh:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run PowerShell test suite
+        run: pwsh -File plugins/cost-guard/tests/run.ps1
+
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check manifest versions are identical
+        run: |
+          set -eu
+          files="
+            .claude-plugin/marketplace.json
+            .agents/plugins/marketplace.json
+            .cursor-plugin/marketplace.json
+            plugin.json
+            gemini-extension.json
+            plugins/cost-guard/.claude-plugin/plugin.json
+            plugins/cost-guard/.codex-plugin/plugin.json
+            plugins/cost-guard/.cursor-plugin/plugin.json
+          "
+          fail=0
+          : > /tmp/versions.txt
+          for f in $files; do
+            n=$(jq '[.. | objects | select(has("version"))] | length' "$f")
+            if [ "$n" -eq 0 ]; then
+              echo "FAIL: no version field found in $f"
+              fail=1
+              continue
+            fi
+            jq -r --arg f "$f" \
+              '.. | objects | select(has("version")) | "\($f)\t\(.version)"' \
+              "$f" >> /tmp/versions.txt
+          done
+          echo "version fields found (file<TAB>version):"
+          cat /tmp/versions.txt
+          uniq_versions=$(cut -f2 /tmp/versions.txt | sort -u)
+          if [ "$(printf '%s\n' "$uniq_versions" | wc -l)" -ne 1 ]; then
+            echo "FAIL: manifest versions are not identical:"
+            printf '%s\n' "$uniq_versions"
+            fail=1
+          fi
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "OK: all manifest versions = $uniq_versions"

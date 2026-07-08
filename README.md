@@ -1,5 +1,7 @@
 # norequest plugins
 
+[![ci](https://github.com/norequest/cost-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/norequest/cost-guard/actions/workflows/ci.yml)
+
 A plugin marketplace for AI coding agent CLIs: Claude Code, OpenAI Codex,
 Google Gemini, GitHub Copilot, and Cursor. One repo, one marketplace, and each
 plugin installs with a single command from your own CLI.

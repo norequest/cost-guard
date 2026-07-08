@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7
 # cost-guard :: Google Gemini CLI adapter (PowerShell 7+)
 #
 # Usage (wired in settings.json hooks block): adapter.ps1 <canonical-event>

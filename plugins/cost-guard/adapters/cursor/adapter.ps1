@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7
 # cost-guard :: Cursor adapter (PowerShell 7+)
 #
 # Usage (wired in .cursor/hooks.json): adapter.ps1 <canonical-event>
