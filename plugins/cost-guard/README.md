@@ -19,7 +19,7 @@ so you install with a single command from your own CLI. Pick your row:
 | IDE | Install command | Install method | Verified |
 |---|---|---|---|
 | **Claude Code** | `/plugin marketplace add norequest/plugins` → `/plugin install cost-guard@norequest` | native marketplace | runtime ✅ (flagship) |
-| **OpenAI Codex** | `codex plugin marketplace add norequest/plugins` → `codex plugin install cost-guard@norequest` | native marketplace | schema-only ⚠️ |
+| **OpenAI Codex** | `codex plugin marketplace add norequest/plugins` → `codex plugin install cost-guard@norequest` | native marketplace | wiring ✅ (CI) |
 | **Google Gemini** | `gemini extensions link ./plugins/cost-guard/gemini` (from a repo clone) | linked extension | schema-only ⚠️ |
 | **GitHub Copilot (CLI)** | `copilot plugin install norequest/plugins:plugins/cost-guard` | native plugin (subdir) | schema-only ⚠️ |
 | **Cursor** | `plugins/cost-guard/install/install.sh cursor .` (writes `.cursor/hooks.json`) | installer / config file | runtime ✅ (CI smoke) |
@@ -27,10 +27,12 @@ so you install with a single command from your own CLI. Pick your row:
 
 **Verified** column: `runtime` means the install path is exercised end to end
 (Cursor and Copilot cloud run in CI on every push; Claude Code is the flagship dev
-target). `schema-only` means the wiring is validated against the CLI's current
-docs but has not yet been run against that CLI. See the Verification status note
-under [How the marketplaces work](#how-the-marketplaces-work) for exactly what is
-and is not covered.
+target). `wiring` means the marketplace manifest chain resolves and the wired hook
+command gates in CI, but the actual CLI install is unverified (Codex; its CLI is
+not on the build machine). `schema-only` means the wiring is validated against the
+CLI's current docs but has not yet been run against that CLI. See the Verification
+status note under [How the marketplaces work](#how-the-marketplaces-work) for
+exactly what is and is not covered.
 
 **Requirements (all IDEs):** **bash + jq** on macOS/Linux (`brew install jq` /
 `apt install jq`). Every adapter ships a `.sh` and a `.ps1` sibling over one
@@ -161,7 +163,7 @@ ultimately invoke `adapters/<ide>/adapter.sh <canonical-event>`, which
 self-resolves `core/` regardless of cwd; the tested core/adapter logic is
 identical across IDEs.
 
-> **Verification status.** Three tiers:
+> **Verification status.** Four tiers:
 >
 > - **Core and adapters: runtime-tested.** A 130-check bash suite plus a
 >   PowerShell parity suite, green in CI on Ubuntu, macOS, and Windows.
@@ -174,12 +176,17 @@ identical across IDEs.
 >   gates). Both run in CI on Ubuntu and macOS. The only unverified piece is each
 >   runtime's own parse of its hooks manifest (which payload fields it passes,
 >   `failClosed` handling), which needs the actual IDE or cloud.
-> - **Codex, Copilot CLI (native plugin), and Gemini: schema-verified only.** JSON
->   validates and every marketplace source and manifest hooks reference resolves,
->   but these paths are new/preview (Codex `plugin marketplace` ~v0.121, Copilot
->   CLI plugins preview-era, Gemini extensions + hooks ≥ v0.26.0) and are not yet
->   runtime-tested here. Treat them as "documented and wired," and smoke-test with
->   each CLI before relying on them.
+> - **Codex marketplace wiring: runtime-tested.** `tests/smoke-codex.sh` (CI)
+>   resolves the full chain (marketplace source → plugin manifest → hooks →
+>   adapter) and runs the wired command the way Codex would, asserting it gates
+>   both with `${CLAUDE_PLUGIN_ROOT}` set and via the `.` fallback, plus that the
+>   installer prints the right commands. The actual `codex plugin install` is not
+>   run here (the Codex CLI is not on the build machine).
+> - **Copilot CLI (native plugin) and Gemini: schema-verified only.** JSON
+>   validates and every manifest reference resolves, but these paths are
+>   new/preview (Copilot CLI plugins preview-era, Gemini extensions + hooks ≥
+>   v0.26.0) and are not yet runtime-tested here. Treat them as "documented and
+>   wired," and smoke-test with each CLI before relying on them.
 
 ## What it does
 
@@ -426,16 +433,19 @@ cost-guard/                                # the norequest marketplace repo
 Run the 130-check harness with `plugins/cost-guard/tests/run.sh` from the repo
 root, or `tests/run.sh` from this plugin directory.
 
-Two install integration smoke tests exercise the file-based paths against a
-throwaway project, driving each hook lifecycle the way the agent does (the wired
-command, its real cwd, payload on stdin):
+Three integration smoke tests drive each hook lifecycle the way the agent does
+(the wired command, its real cwd, payload on stdin):
 
-- `tests/smoke-cursor.sh`: allow/deny gating, the session ledger, and the native
-  `${CLAUDE_PLUGIN_ROOT}` marketplace wiring.
-- `tests/smoke-copilot.sh`: the cloud-agent wiring, including lazy bootstrap (a
-  first pre-tool with no session-start still gates, matching the cloud dropping
+- `tests/smoke-cursor.sh`: the file install plus allow/deny gating, the session
+  ledger, and the native `${CLAUDE_PLUGIN_ROOT}` marketplace wiring.
+- `tests/smoke-copilot.sh`: the cloud-agent file install, including lazy bootstrap
+  (a first pre-tool with no session-start still gates, matching the cloud dropping
   lifecycle events), the ledger, the installer's no-clobber guard + FORCE
   override, and uninstall.
+- `tests/smoke-codex.sh`: the Codex marketplace wiring chain (source → plugin →
+  hooks → adapter) resolving and the wired command gating, both with
+  `${CLAUDE_PLUGIN_ROOT}` set and via the `.` fallback (Codex has no file install,
+  and its CLI is not on the build machine).
 
 All suites run in CI on Ubuntu and macOS.
 

@@ -30,6 +30,8 @@ jobs:
         run: bash plugins/cost-guard/tests/smoke-cursor.sh
       - name: Run copilot cloud install smoke test
         run: bash plugins/cost-guard/tests/smoke-copilot.sh
+      - name: Run codex marketplace wiring smoke test
+        run: bash plugins/cost-guard/tests/smoke-codex.sh
 
   shellcheck:
     runs-on: ubuntu-latest
@@ -45,7 +47,8 @@ jobs:
             plugins/cost-guard/install/install.sh \
             plugins/cost-guard/tests/run.sh \
             plugins/cost-guard/tests/smoke-cursor.sh \
-            plugins/cost-guard/tests/smoke-copilot.sh
+            plugins/cost-guard/tests/smoke-copilot.sh \
+            plugins/cost-guard/tests/smoke-codex.sh
 
   test-pwsh:
     runs-on: windows-latest
