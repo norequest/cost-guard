@@ -232,6 +232,7 @@ pre-tool)
   fi
 
   TMP="$STATE.tmp.$$"
+  # shellcheck disable=SC2015  # any RMW failure (jq or mv) must fail open, by design
   jq --arg h "$HASH" '
       if (.lastHash // "") == $h
       then .streak = ((.streak // 0) + 1)
@@ -240,7 +241,8 @@ pre-tool)
       | .lastHash = $h
       | .count += 1
     ' "$STATE" > "$TMP" \
-    && mv "$TMP" "$STATE" || { emit_allow; exit 0; }
+    && mv "$TMP" "$STATE" \
+    || { emit_allow; exit 0; }
 
   COUNT=$(jq -r '.count' "$STATE")
   STREAK=$(jq -r '.streak // 0' "$STATE")
