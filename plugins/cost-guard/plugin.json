@@ -10,5 +10,5 @@
   "license": "MIT",
   "keywords": ["cost", "budget", "guard", "runaway", "hooks", "finops"],
   "category": "productivity",
-  "hooks": "plugins/cost-guard/adapters/copilot/hooks.json"
+  "hooks": "adapters/copilot/hooks.json"
 }

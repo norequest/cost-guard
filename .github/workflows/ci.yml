@@ -37,6 +37,7 @@ jobs:
           shellcheck \
             plugins/cost-guard/core/guard.sh \
             plugins/cost-guard/adapters/*/adapter.sh \
+            plugins/cost-guard/gemini/hooks/entry.sh \
             plugins/cost-guard/install/install.sh \
             plugins/cost-guard/tests/run.sh
 
@@ -58,8 +59,8 @@ jobs:
             .claude-plugin/marketplace.json
             .agents/plugins/marketplace.json
             .cursor-plugin/marketplace.json
-            plugin.json
-            gemini-extension.json
+            plugins/cost-guard/plugin.json
+            plugins/cost-guard/gemini/gemini-extension.json
             plugins/cost-guard/.claude-plugin/plugin.json
             plugins/cost-guard/.codex-plugin/plugin.json
             plugins/cost-guard/.cursor-plugin/plugin.json

@@ -35,8 +35,8 @@ directly from this repo (see the per-IDE rows below).
 |---|---|
 | **Claude Code** | `/plugin marketplace add norequest/plugins` then `/plugin install cost-guard@norequest` |
 | **OpenAI Codex** | `codex plugin marketplace add norequest/plugins` then `codex plugin install cost-guard@norequest` |
-| **Google Gemini** | `gemini extensions install https://github.com/norequest/plugins` |
-| **GitHub Copilot (CLI)** | `copilot plugin install norequest/plugins` |
+| **Google Gemini** | `gemini extensions link ./plugins/cost-guard/gemini` (from a repo clone) |
+| **GitHub Copilot (CLI)** | `copilot plugin install norequest/plugins:plugins/cost-guard` |
 | **Cursor** | `plugins/cost-guard/install/install.sh cursor .` (from a repo clone) |
 | **GitHub Copilot (cloud agent)** | `plugins/cost-guard/install/install.sh copilot .` then commit `.github/hooks/cost-guard.json` |
 
@@ -53,16 +53,22 @@ norequest (this repo)
 ├── .claude-plugin/marketplace.json    # Claude Code marketplace "norequest"
 ├── .agents/plugins/marketplace.json   # Codex marketplace "norequest"
 ├── .cursor-plugin/marketplace.json    # Cursor marketplace (Teams / official import)
-├── gemini-extension.json              # Gemini extension manifest (direct install)
-├── hooks/hooks.json                   # Gemini hooks → plugins/cost-guard/adapters/gemini/
-├── plugin.json                        # Copilot CLI plugin → plugins/cost-guard/adapters/copilot/hooks.json
+├── LICENSE
+├── README.md
 └── plugins/
-    └── cost-guard/                    # core + adapters + installer + tests + README
+    └── cost-guard/                    # the plugin, fully self-contained
+        ├── .claude-plugin/ .codex-plugin/ .cursor-plugin/   # per-IDE plugin manifests
+        ├── plugin.json                # Copilot CLI manifest (norequest/plugins:plugins/cost-guard)
+        ├── gemini/                    # Gemini extension, linked: gemini-extension.json + hooks/
+        ├── core/  adapters/  install/  collector/  tests/
+        └── README.md
 ```
 
-Gemini and Copilot CLI install directly from this repo because those CLIs have
-no marketplace concept; their root-level manifests point into
-`plugins/cost-guard/`.
+Gemini and Copilot CLI have no marketplace concept, so they install the plugin
+straight from its subdirectory: Copilot via the subdir path
+`norequest/plugins:plugins/cost-guard`, Gemini by linking the
+`plugins/cost-guard/gemini` extension folder from a local clone. Both manifests
+live inside the plugin, so the marketplace root stays plugin-agnostic.
 
 ## License
 

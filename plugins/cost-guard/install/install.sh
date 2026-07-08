@@ -47,9 +47,9 @@ Four IDEs install NATIVELY (no files to copy) — run the command in that IDE / 
   Codex          codex plugin marketplace add $SLUG
                  codex plugin install cost-guard@norequest
 
-  Gemini         gemini extensions install $GH_URL
+  Gemini         gemini extensions link ./plugins/cost-guard/gemini   (from a repo clone)
 
-  Copilot (CLI)  copilot plugin install $SLUG
+  Copilot (CLI)  copilot plugin install $SLUG:plugins/cost-guard
 
 Two paths are file-based — this script installs them into a target project:
 
@@ -96,23 +96,29 @@ EOF
 
 print_gemini() {
   cat <<EOF
-Gemini installs cost-guard as an extension — no files to copy. Run:
+Gemini has no marketplace or remote subdirectory install, so cost-guard links
+the extension from a local clone. Clone the repo, then from its root run:
 
-  gemini extensions install $GH_URL
+  git clone $GH_URL
+  gemini extensions link ./plugins/cost-guard/gemini
 
-Requires Gemini CLI with extensions + hooks support, plus bash + jq on PATH.
+Requires Gemini CLI with extensions + hooks support (>= v0.26.0), plus bash + jq
+on PATH. link does not copy, so updates to the clone are reflected live.
 EOF
 }
 
 print_copilot_cli() {
   cat <<EOF
-GitHub Copilot CLI installs cost-guard as a plugin — no files to copy. Run:
+GitHub Copilot CLI installs cost-guard as a plugin from this repo subdirectory.
+Run:
 
-  copilot plugin install $SLUG
+  copilot plugin install $SLUG:plugins/cost-guard
 
-Requires a Copilot CLI build with plugin support, plus bash + jq on PATH.
+The ":plugins/cost-guard" subpath is required: a bare $SLUG would look for a
+manifest at the repo root and not find it. Requires a recent Copilot CLI with
+plugin support, plus bash + jq on PATH.
 
-(For the Copilot CLOUD agent / repo hooks, use: plugins/cost-guard/install/install.sh copilot <target-dir>)
+(For the Copilot cloud agent / repo hooks, use: plugins/cost-guard/install/install.sh copilot <target-dir>)
 EOF
 }
 

@@ -1,11 +1,7 @@
-# cost-guard runtime artifacts
+# OS / editor cruft
 .DS_Store
+# atomic-write scratch files
 *.tmp
 *.tmp.*
-# local collector data
-collector/data/
-data/
-# session logs (if a user points COST_GUARD_LOG_DIR into the repo)
-*.jsonl
 # internal docs / design notes / drafts (kept local, not published)
 docs/

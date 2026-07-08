@@ -346,6 +346,47 @@ test_core_hardening() {
 
 test_core_hardening
 
+# ============================================================= gemini shim
+# The Gemini extension is linked at plugins/cost-guard/gemini and its hooks.json
+# invokes ${extensionPath}/hooks/entry.sh, a shim that resolves the shared
+# adapters/gemini/adapter.sh from its own location and fails open. Prove the shim
+# really delegates (allow stays silent, a consecutive-repeat loop denies through
+# it) and that it fails open when the sibling adapter cannot be resolved.
+test_gemini_shim() {
+  printf '\n=== gemini extension shim ===\n'
+  SHIM="$REPO/gemini/hooks/entry.sh"
+  GS_STATE=$(mktemp -d 2>/dev/null || mktemp -d -t cggshim)
+  GS_LOG=$(mktemp -d 2>/dev/null || mktemp -d -t cggshimlog)
+  run_shim() { # <event> <raw-json>
+    printf '%s' "$2" | env \
+      COST_GUARD_STATE_DIR="$GS_STATE" COST_GUARD_LOG_DIR="$GS_LOG" \
+      COST_GUARD_MAX_REPEATS=2 \
+      bash "$SHIM" "$1"
+  }
+  run_shim session-start "$(build_start gemini gs1)" >/dev/null
+
+  # (i) allow stays silent through the shim (gemini emits nothing on allow)
+  a1=$(run_shim pre-tool "$(build_pre gemini gs1 Bash '{"command":"x"}')")
+  check "(i) shim allow emits empty stdout" "" "$a1"
+
+  # (ii) 3rd consecutive identical call (MAX_REPEATS=2) denies THROUGH the shim,
+  #      which only happens if the shim reaches the adapter and shares state
+  run_shim pre-tool "$(build_pre gemini gs1 Bash '{"command":"x"}')" >/dev/null
+  d3=$(run_shim pre-tool "$(build_pre gemini gs1 Bash '{"command":"x"}')")
+  check "(ii) shim delegates: consecutive-repeat loop denies through it" deny \
+    "$(printf '%s' "$d3" | jq -r '.decision // "none"')"
+
+  # (iii) fail-open: a shim whose sibling adapter does not exist exits 0, silent
+  FO_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t cgfoshim)
+  cp "$SHIM" "$FO_DIR/entry.sh"; chmod +x "$FO_DIR/entry.sh"
+  fo_out=$(printf '{}' | bash "$FO_DIR/entry.sh" pre-tool); fo_rc=$?
+  check "(iii) shim fails open when adapter missing (empty stdout)" "" "$fo_out"
+  check "(iii) shim fails open when adapter missing (rc 0)" 0 "$fo_rc"
+  rm -rf "$FO_DIR" "$GS_STATE" "$GS_LOG"
+}
+
+test_gemini_shim
+
 printf '\n---------------------------------------------\n'
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

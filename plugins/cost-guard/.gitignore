@@ -1,0 +1,5 @@
+# cost-guard runtime artifacts
+collector/data/
+data/
+# session logs (if COST_GUARD_LOG_DIR points into the repo)
+*.jsonl

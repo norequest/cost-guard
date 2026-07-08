@@ -20,8 +20,8 @@ so you install with a single command from your own CLI. Pick your row:
 |---|---|---|---|
 | **Claude Code** | `/plugin marketplace add norequest/plugins` → `/plugin install cost-guard@norequest` | native marketplace | native ✅ |
 | **OpenAI Codex** | `codex plugin marketplace add norequest/plugins` → `codex plugin install cost-guard@norequest` | native marketplace | native ✅ |
-| **Google Gemini** | `gemini extensions install https://github.com/norequest/plugins` | native extension | native ✅ |
-| **GitHub Copilot (CLI)** | `copilot plugin install norequest/plugins` | native plugin | native ✅ |
+| **Google Gemini** | `gemini extensions link ./plugins/cost-guard/gemini` (from a repo clone) | linked extension | native ✅ |
+| **GitHub Copilot (CLI)** | `copilot plugin install norequest/plugins:plugins/cost-guard` | native plugin (subdir) | native ✅ |
 | **Cursor** | `plugins/cost-guard/install/install.sh cursor .` (writes `.cursor/hooks.json`) | installer / config file | file-based ⚠️ |
 | **GitHub Copilot (cloud agent)** | `plugins/cost-guard/install/install.sh copilot .` → commit `.github/hooks/cost-guard.json` | config file | file-based ⚠️ |
 
@@ -64,25 +64,32 @@ the plugin's `.codex-plugin/plugin.json` points `hooks` at
 ### Google Gemini
 
 ```
-gemini extensions install https://github.com/norequest/plugins
+git clone https://github.com/norequest/plugins
+gemini extensions link ./plugins/cost-guard/gemini
 ```
 
-Requires **Gemini CLI ≥ v0.26.0** (hooks GA). Gemini has no marketplace
-concept, so this repo installs the cost-guard extension directly. The extension
-is defined by the root `gemini-extension.json`; Gemini auto-loads the root
-`hooks/hooks.json` by convention, which wires `SessionStart` / `BeforeTool` /
-`AfterTool` / `SessionEnd` to `plugins/cost-guard/adapters/gemini/` via
-`${extensionPath}`.
+Requires **Gemini CLI ≥ v0.26.0** (hooks GA). Gemini has no marketplace concept
+and cannot install from a repo subdirectory, so the extension is **linked** from
+a local clone (link does not copy; edits to the clone apply live). The extension
+root is `plugins/cost-guard/gemini/`, deliberately separate from the plugin root
+so its `hooks/hooks.json` never collides with the plugin-root `hooks/hooks.json`
+convention that Claude Code, Codex, and Cursor all auto-scan. `gemini-extension.json`
+and `hooks/hooks.json` sit at that extension root; the hooks call
+`${extensionPath}/hooks/entry.sh`, a shim that resolves the shared
+`adapters/gemini/adapter.sh` and fails open. It wires `SessionStart` /
+`BeforeTool` / `AfterTool` / `SessionEnd`.
 
 ### GitHub Copilot (CLI)
 
 ```
-copilot plugin install norequest/plugins
+copilot plugin install norequest/plugins:plugins/cost-guard
 ```
 
-Requires a recent Copilot CLI with plugin support. Copilot also has no
-marketplace concept; the root `plugin.json` points `hooks` at
-`plugins/cost-guard/adapters/copilot/hooks.json`, which wires
+Requires a recent Copilot CLI with plugin support. Copilot has no marketplace
+concept but installs a plugin from a repo subdirectory via the `OWNER/REPO:PATH`
+form, so the `:plugins/cost-guard` subpath is required (a bare `norequest/plugins`
+looks only at the repo root). The plugin's `plugin.json` points `hooks` at
+`adapters/copilot/hooks.json` (paths relative to the plugin root), which wires
 `sessionStart` / `preToolUse` / `postToolUse` / `errorOccurred` / `sessionEnd`.
 
 ### Cursor
@@ -119,32 +126,35 @@ path executes there.
 
 This is **one repo that exposes a separate committed marketplace / extension
 manifest per IDE**. Each IDE reads a differently-named file, so there is no
-collision. The repo root holds the marketplace-level manifests (plus the
-direct-install manifests for Gemini and Copilot CLI, which have no marketplace
-concept), and the plugin itself lives at `plugins/cost-guard/`. You add only
-your own IDE's manifest.
+collision. The repo root holds only the marketplace-level manifests; everything
+else, including the Copilot CLI manifest and the Gemini extension (those two CLIs
+have no marketplace concept and install the plugin straight from its
+subdirectory), lives inside `plugins/cost-guard/`. You add only your own IDE's
+manifest.
 
 | IDE | Manifest you add | Points hooks at |
 |---|---|---|
 | Claude Code | root `.claude-plugin/marketplace.json` + `plugins/cost-guard/.claude-plugin/plugin.json` | `adapters/claude-code/hooks.json` |
 | OpenAI Codex | root `.agents/plugins/marketplace.json` + `plugins/cost-guard/.codex-plugin/plugin.json` | `adapters/codex/hooks.json` |
-| Google Gemini | root `gemini-extension.json` + root `hooks/hooks.json` (convention) | `plugins/cost-guard/adapters/gemini/adapter.sh` (via `${extensionPath}`) |
-| GitHub Copilot (CLI) | root `plugin.json` | `plugins/cost-guard/adapters/copilot/hooks.json` |
+| Google Gemini | `plugins/cost-guard/gemini/gemini-extension.json` + `gemini/hooks/hooks.json` (linked extension root) | `gemini/hooks/entry.sh` shim → `adapters/gemini/adapter.sh` |
+| GitHub Copilot (CLI) | `plugins/cost-guard/plugin.json` (subdir install) | `adapters/copilot/hooks.json` |
 | Cursor | root `.cursor-plugin/marketplace.json` + `plugins/cost-guard/.cursor-plugin/plugin.json` (Teams / official import) | `adapters/cursor/hooks.json` |
 
 For the marketplace-aware CLIs (Claude Code, Codex, Cursor) the root manifest
 lists the plugin source as `./plugins/cost-guard`, and the plugin manifest
 points at its own hooks file because the hook schemas differ (event names,
-decision shape, path variable). Gemini and Copilot CLI install directly from
-this repo, so their root manifests point straight into
-`plugins/cost-guard/adapters/`. All of them invoke
-`adapters/<ide>/adapter.sh <canonical-event>`, which self-resolves `core/`
-regardless of cwd; the tested core/adapter logic is identical across IDEs.
+decision shape, path variable). Copilot CLI installs the plugin from the
+`plugins/cost-guard` subdirectory; Gemini links the isolated
+`plugins/cost-guard/gemini` extension folder (its `hooks/hooks.json` is kept out
+of the plugin root, which Claude, Codex, and Cursor all auto-scan). All of them
+ultimately invoke `adapters/<ide>/adapter.sh <canonical-event>`, which
+self-resolves `core/` regardless of cwd; the tested core/adapter logic is
+identical across IDEs.
 
 > **Verification status.** The manifests are **schema-verified against the
 > current IDE docs** (JSON validates; every marketplace→source and
 > manifest→hooks reference resolves), and the core + adapters are runtime-tested
-> (106-check suite green). But the **native install paths on the non-Claude CLIs
+> (129-check bash suite green, plus a PowerShell parity suite). But the **native install paths on the non-Claude CLIs
 > are new/preview** (Codex `plugin marketplace` ~v0.121, Copilot CLI plugins
 > preview-era, Gemini extensions+hooks ≥ v0.26.0) and were not runtime-tested on
 > the build machine. Treat them as "documented and wired," and do a local smoke
@@ -358,23 +368,26 @@ next to the adapter, or the plugin-relative `../../core`.
 ## Files / layout
 
 The plugin lives at `plugins/cost-guard/` inside the norequest marketplace repo.
-The repo root holds the marketplace manifests (plus the direct-install manifests
-for Gemini and Copilot CLI); everything under `plugins/cost-guard/` is the
-plugin itself. Each IDE reads its own manifest; all of them point at one shared
-`core/` through a thin per-IDE adapter.
+The repo root holds only the marketplace manifests; everything the plugin needs,
+including the Copilot CLI manifest and the Gemini extension, lives under
+`plugins/cost-guard/`. Each IDE reads its own manifest; all of them point at one
+shared `core/` through a thin per-IDE adapter.
 
 ```
 cost-guard/                                # the norequest marketplace repo
 ├── .claude-plugin/marketplace.json        # Claude Code marketplace (plugin source ./plugins/cost-guard)
 ├── .agents/plugins/marketplace.json       # Codex marketplace
 ├── .cursor-plugin/marketplace.json        # Cursor marketplace (Teams / official import)
-├── gemini-extension.json                  # Gemini extension manifest (direct install)
-├── hooks/hooks.json                       # Gemini hooks → plugins/cost-guard/adapters/gemini/ (${extensionPath})
-├── plugin.json                            # Copilot CLI plugin → plugins/cost-guard/adapters/copilot/hooks.json
-└── plugins/cost-guard/                    # this plugin
-    ├── .claude-plugin/plugin.json         # hooks → adapters/claude-code/hooks.json
-    ├── .codex-plugin/plugin.json          # hooks → adapters/codex/hooks.json
-    ├── .cursor-plugin/plugin.json         # hooks → adapters/cursor/hooks.json
+├── LICENSE
+├── README.md                              # marketplace-level README
+└── plugins/cost-guard/                    # this plugin, fully self-contained
+    ├── .claude-plugin/plugin.json         # Claude hooks → adapters/claude-code/hooks.json
+    ├── .codex-plugin/plugin.json          # Codex hooks → adapters/codex/hooks.json
+    ├── .cursor-plugin/plugin.json         # Cursor hooks → adapters/cursor/hooks.json
+    ├── plugin.json                        # Copilot CLI manifest → adapters/copilot/hooks.json
+    ├── gemini/                            # Gemini extension root (linked from a clone)
+    │   ├── gemini-extension.json
+    │   └── hooks/{hooks.json, entry.sh}   # hooks.json → ${extensionPath}/hooks/entry.sh shim → adapters/gemini
     ├── core/{guard.sh, guard.ps1}         # the neutral engine (bash+jq / PowerShell 7+)
     ├── adapters/
     │   ├── claude-code/{adapter.sh, adapter.ps1, hooks.json}
@@ -384,12 +397,12 @@ cost-guard/                                # the norequest marketplace repo
     │   └── gemini/{adapter.sh, adapter.ps1, settings.hooks.json}
     ├── install/install.sh                 # Cursor individuals + Copilot cloud + native-command printer
     ├── collector/collector.py             # zero-dependency central collector
-    └── tests/{run.sh, payloads/}          # 106-check verification harness
+    └── tests/{run.sh, run.ps1, payloads/} # verification harness (bash + PowerShell parity)
 ```
 
 ## Tests
 
-Run the 106-check harness with `plugins/cost-guard/tests/run.sh` from the repo
+Run the 129-check harness with `plugins/cost-guard/tests/run.sh` from the repo
 root, or `tests/run.sh` from this plugin directory.
 
 ## License
